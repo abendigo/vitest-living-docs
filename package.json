@@ -17,7 +17,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "living-docs": "./scripts/generate-test-docs.mjs"
+    "vitest-living-docs": "scripts/generate-test-docs.mjs"
   },
   "scripts": {
     "build": "tsup",
