@@ -1,6 +1,19 @@
 import { it, describe } from 'vitest'
 
-export { describe as feature }
+export function feature(name: string, fn: () => void): void
+export function feature(name: string, description: string[], fn: () => void): void
+export function feature(name: string, descriptionOrFn: string[] | (() => void), fn?: () => void): void {
+  const description = Array.isArray(descriptionOrFn) ? descriptionOrFn : undefined
+  const callback = typeof descriptionOrFn === 'function' ? descriptionOrFn : fn!
+  describe(name, () => {
+    if (description) {
+      it('__feature_meta__', (ctx) => {
+        ;(ctx.task.meta as Record<string, unknown>).featureDescription = description
+      })
+    }
+    callback()
+  })
+}
 
 type Fixture = Record<string, unknown>
 type SetupFn<F extends Fixture> = (fixture: F) => F | Promise<F>

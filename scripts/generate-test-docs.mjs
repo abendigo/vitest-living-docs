@@ -16,8 +16,52 @@ const results = JSON.parse(readFileSync(inputPath, 'utf-8'))
 const SUITE_H = 'var(--suite-h)'
 const GIVEN_ROW_H = 'var(--given-row-h)'
 
-function whenTop(givenCount) {
-  return `calc(var(--suite-h) + var(--given-header-padding) + ${givenCount} * var(--given-row-h))`
+// Estimate height of a feature header in rem.
+// Estimate feature header height — constants mirror the CSS values so changes stay in sync.
+const BASE_FONT_PX         = 14    // body font-size: 14px
+const CONTAINER_PX         = 900   // main max-width
+const FEATURE_LABEL_REM    = 4     // .feature-label width
+const FEATURE_H_PAD_REM    = 1.25  // .feature-header padding (each side)
+const FEATURE_GAP_REM      = 0.5   // .feature-header gap between label and body
+const FEATURE_DESC_FONT    = 0.8   // .feature-description font-size in rem
+const AVG_CHAR_WIDTH_RATIO = 0.62  // average char width as fraction of font size (sans-serif prose)
+
+const featureDescFontPx   = FEATURE_DESC_FONT * BASE_FONT_PX
+const availableWidthPx    = CONTAINER_PX
+  - (FEATURE_H_PAD_REM * 2 * BASE_FONT_PX)
+  - (FEATURE_LABEL_REM * BASE_FONT_PX)
+  - (FEATURE_GAP_REM * BASE_FONT_PX)
+const FEATURE_CHARS_PER_LINE = Math.floor(availableWidthPx / (featureDescFontPx * AVG_CHAR_WIDTH_RATIO))
+
+const FEATURE_PADDING      = 1.2   // 0.6rem top + 0.6rem bottom
+const FEATURE_NAME_H       = 1.4   // 0.875rem font * 1.6 line-height
+const FEATURE_PARA_LINE_H  = 1.28  // 0.8rem font * 1.6 line-height
+const FEATURE_GAP          = 0.35  // gap between items in feature-body
+
+function featureHeaderHeight(description) {
+  if (!description || description.length === 0) {
+    return FEATURE_PADDING + FEATURE_NAME_H
+  }
+  let h = FEATURE_PADDING + FEATURE_NAME_H + FEATURE_GAP
+  for (let i = 0; i < description.length; i++) {
+    const lines = Math.ceil(description[i].length / FEATURE_CHARS_PER_LINE)
+    h += lines * FEATURE_PARA_LINE_H
+    if (i < description.length - 1) h += FEATURE_GAP
+  }
+  return h
+}
+
+function whenTop(givenCount, featureOffset) {
+  const base = featureOffset > 0
+    ? `calc(var(--suite-h) + ${featureOffset.toFixed(3)}rem)`
+    : 'var(--suite-h)'
+  return `calc(${base} + var(--given-header-padding) + ${givenCount} * var(--given-row-h))`
+}
+
+function givenTop(featureOffset) {
+  return featureOffset > 0
+    ? `calc(var(--suite-h) + ${featureOffset.toFixed(3)}rem)`
+    : 'var(--suite-h)'
 }
 
 function domainName(filePath) {
@@ -49,11 +93,26 @@ function parts(arr) {
   return arr.map(p => `<span class="part">${escapeHtml(p)}</span>`).join('<span class="sep"> and </span>')
 }
 
+function buildGivenMap(tests) {
+  const givenMap = new Map()
+  for (const test of tests) {
+    const { given, when, then } = test.meta.structure
+    const givenKey = JSON.stringify(given)
+    const whenKey = JSON.stringify(when)
+    if (!givenMap.has(givenKey)) givenMap.set(givenKey, { given, whenMap: new Map() })
+    const givenEntry = givenMap.get(givenKey)
+    if (!givenEntry.whenMap.has(whenKey)) givenEntry.whenMap.set(whenKey, { when, thens: [] })
+    givenEntry.whenMap.get(whenKey).thens.push({ then, test })
+  }
+  return [...givenMap.values()]
+}
+
 function groupTests(tests) {
   const structured = []
   const unstructured = []
 
   for (const test of tests) {
+    if (test.title === '__feature_meta__') continue
     if (test.meta?.structure) {
       structured.push(test)
     } else {
@@ -61,31 +120,34 @@ function groupTests(tests) {
     }
   }
 
-  const givenMap = new Map()
-
+  const featureMap = new Map()
   for (const test of structured) {
-    const { given, when, then } = test.meta.structure
-    const givenKey = JSON.stringify(given)
-    const whenKey = JSON.stringify(when)
-
-    if (!givenMap.has(givenKey)) {
-      givenMap.set(givenKey, { given, whenMap: new Map() })
-    }
-    const givenEntry = givenMap.get(givenKey)
-
-    if (!givenEntry.whenMap.has(whenKey)) {
-      givenEntry.whenMap.set(whenKey, { when, thens: [] })
-    }
-    givenEntry.whenMap.get(whenKey).thens.push({ then, test })
+    const featureName = test.ancestorTitles?.[0] ?? null
+    const key = featureName ?? ''
+    if (!featureMap.has(key)) featureMap.set(key, { featureName, tests: [] })
+    featureMap.get(key).tests.push(test)
   }
 
-  return { givenGroups: [...givenMap.values()], unstructured }
+  // Also pick up featureDescription from the hidden meta test
+  const featureDescriptions = new Map()
+  for (const test of tests) {
+    if (test.title === '__feature_meta__' && test.meta?.featureDescription) {
+      const featureName = test.ancestorTitles?.[0] ?? ''
+      featureDescriptions.set(featureName, test.meta.featureDescription)
+    }
+  }
+
+  const featureGroups = [...featureMap.values()].map(({ featureName, tests }) => ({
+    featureName,
+    description: featureDescriptions.get(featureName ?? '') ?? null,
+    givenGroups: buildGivenMap(tests),
+  }))
+
+  return { featureGroups, unstructured }
 }
 
-function renderSuite(suite) {
-  const { givenGroups, unstructured } = groupTests(suite.tests)
-
-  const givenHtml = givenGroups.map(({ given, whenMap }) => {
+function renderGivenGroups(givenGroups, featureOffset = 0) {
+  return givenGroups.map(({ given, whenMap }) => {
     const whenHtml = [...whenMap.values()].map(({ when, thens }) => {
       const thenHtml = thens.map(({ then, test }) => {
         const failed = test.status === 'failed'
@@ -103,7 +165,7 @@ function renderSuite(suite) {
 
       return `
         <div class="when-group">
-          <div class="when-row" style="top:${whenTop(given.length)}">
+          <div class="when-row" style="top:${whenTop(given.length, featureOffset)}">
             <span class="when-label">when</span>
             <span class="when-text">${parts(when)}</span>
           </div>
@@ -113,7 +175,7 @@ function renderSuite(suite) {
 
     return `
       <div class="given-group">
-        <div class="given-header">
+        <div class="given-header" style="top:${givenTop(featureOffset)}">
           ${given.map(p => `
           <div class="given-row">
             <span class="given-label">given</span>
@@ -121,6 +183,27 @@ function renderSuite(suite) {
           </div>`).join('')}
         </div>
         <div class="whens">${whenHtml}</div>
+      </div>`
+  }).join('')
+}
+
+function renderSuite(suite) {
+  const { featureGroups, unstructured } = groupTests(suite.tests)
+
+  const featuredHtml = featureGroups.map(({ featureName, description, givenGroups }) => {
+    const featureOffset = featureName !== null ? featureHeaderHeight(description) : 0
+    const givenHtml = renderGivenGroups(givenGroups, featureOffset)
+    if (featureName === null) return givenHtml
+    return `
+      <div class="feature-group">
+        <div class="feature-header">
+          <span class="feature-label">feature</span>
+          <div class="feature-body">
+            <span class="feature-name">${escapeHtml(featureName)}</span>
+            ${description ? description.map(p => `<p class="feature-description">${escapeHtml(p)}</p>`).join('') : ''}
+          </div>
+        </div>
+        ${givenHtml}
       </div>`
   }).join('')
 
@@ -131,25 +214,29 @@ function renderSuite(suite) {
     </div>`
   ).join('')
 
-  return givenHtml + unstructuredHtml
+  return featuredHtml + unstructuredHtml
 }
 
 const suites = results.testResults
   .filter(s => s.assertionResults.length > 0)
-  .map(suite => ({
-    name: domainName(suite.name),
-    tests: suite.assertionResults,
-    passed: suite.assertionResults.filter(t => t.status === 'passed').length,
-    failed: suite.assertionResults.filter(t => t.status === 'failed').length,
-  }))
+  .map(suite => {
+    const tests = suite.assertionResults
+    const visible = tests.filter(t => t.title !== '__feature_meta__')
+    return {
+      name: domainName(suite.name),
+      tests,
+      passed: visible.filter(t => t.status === 'passed').length,
+      failed: visible.filter(t => t.status === 'failed').length,
+    }
+  })
   .sort((a, b) => {
     if (b.failed !== a.failed) return b.failed - a.failed  // failing suites first
     return a.name.localeCompare(b.name)
   })
 
-const totalPassed = results.numPassedTests
-const totalFailed = results.numFailedTests
-const totalTests = results.numTotalTests
+const totalPassed = suites.reduce((n, s) => n + s.passed, 0)
+const totalFailed = suites.reduce((n, s) => n + s.failed, 0)
+const totalTests = totalPassed + totalFailed
 const generatedAt = new Date(results.startTime).toLocaleDateString('en-CA', {
   year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
 })
@@ -274,16 +361,66 @@ const html = `<!DOCTYPE html>
 
     .suite-counts { font-weight: 400; color: #9ca3af; }
 
+    /* Feature group */
+    .feature-group {
+      border-bottom: 1px solid #f1f3f7;
+    }
+    .feature-group:last-child { border-bottom: none; }
+
+    /* Sticky level 2 — feature header */
+    .feature-header {
+      position: sticky;
+      top: var(--suite-h);
+      z-index: 25;
+      background: #f3f4f6;
+      border-bottom: 1px solid #e8eaf0;
+      border-top: 1px solid #e8eaf0;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+      padding: 0.6rem 1.25rem;
+    }
+
+    .feature-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #a855f7;
+      width: 4rem;
+      flex-shrink: 0;
+      padding-top: 0.1rem;
+    }
+
+    .feature-body {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .feature-name {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #374151;
+      line-height: 1.6;
+    }
+
+    .feature-description {
+      font-size: 0.8rem;
+      color: #6b7280;
+      line-height: 1.6;
+      font-style: italic;
+    }
+
     /* Given group */
     .given-group {
       border-bottom: 1px solid #f1f3f7;
     }
     .given-group:last-child { border-bottom: none; }
 
-    /* Sticky level 2 — given header */
+    /* Sticky level 3 — given header (top set via inline style) */
     .given-header {
       position: sticky;
-      top: var(--suite-h);
       z-index: 20;
       background: #fff;
       border-bottom: 1px solid #f1f3f7;
