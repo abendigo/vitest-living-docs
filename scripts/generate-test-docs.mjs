@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync, writeFileSync, mkdirSync } from 'fs'
-import { relative, join } from 'path'
+import { relative, join, dirname } from 'path'
 
 const root = process.cwd()
 

@@ -1,4 +1,6 @@
-import { it } from 'vitest'
+import { it, describe } from 'vitest'
+
+export { describe as feature }
 
 type Fixture = Record<string, unknown>
 type SetupFn<F extends Fixture> = (fixture: F) => F | Promise<F>
