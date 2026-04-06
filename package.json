@@ -7,6 +7,11 @@
       "source": "./src/index.ts",
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./eslint": {
+      "source": "./src/eslint.ts",
+      "import": "./dist/eslint.js",
+      "types": "./dist/eslint.d.ts"
     }
   },
   "main": "./dist/index.js",
@@ -22,6 +27,7 @@
     "vitest": ">=2.0.0"
   },
   "devDependencies": {
+    "eslint": "^10.2.0",
     "tsup": "^8.0.0",
     "typescript": "^5.0.0",
     "vitest": "^4.0.0"
