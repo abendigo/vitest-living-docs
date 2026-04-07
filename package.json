@@ -21,7 +21,9 @@
   },
   "scripts": {
     "build": "tsup",
-    "dev": "tsup --watch"
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:report": "vitest run && vitest-living-docs living-docs/index.html"
   },
   "peerDependencies": {
     "vitest": ">=2.0.0"
