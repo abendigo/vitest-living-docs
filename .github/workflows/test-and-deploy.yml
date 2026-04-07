@@ -37,6 +37,14 @@ jobs:
         env:
           CI: true
 
+      - name: Test summary
+        if: always()
+        uses: ctrf-io/github-test-reporter@v1
+        with:
+          report-path: 'ctrf/ctrf-vitest.json'
+          summary-report: true
+          failed-report: true
+
       - name: Generate living docs
         run: node scripts/generate-test-docs.mjs living-docs/index.html
 

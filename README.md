@@ -180,7 +180,7 @@ The generated HTML shows each test suite as a collapsible panel, with scenarios 
 
 Failing tests surface at the top of the report with a summary and inline failure messages.
 
-See a live example: [abendigo.github.io/myfriendsboat](https://abendigo.github.io/myfriendsboat/)
+See a live example: [frustrated.blog/vitest-living-docs](https://frustrated.blog/vitest-living-docs/)
 
 ## ESLint plugin
 
