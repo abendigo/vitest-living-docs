@@ -6,12 +6,11 @@ const withValue = (n: number) => (fixture: { value: number }) => ({ ...fixture, 
 
 // --- assertion factories ---
 
-const resultIs = (expected: number) => (_fixture: unknown, results: unknown[]) => {
-  const result = results[0] as number
+const resultIs = (expected: number) => ([result]: [number]) => {
   if (result !== expected) throw new Error(`Expected ${expected}, got ${result}`)
 }
 
-const allResultsAre = (expected: number[]) => (_fixture: unknown, results: unknown[]) => {
+const allResultsAre = (expected: number[]) => (results: [number, number]) => {
   for (let i = 0; i < expected.length; i++) {
     if (results[i] !== expected[i]) throw new Error(`Result ${i}: expected ${expected[i]}, got ${results[i]}`)
   }

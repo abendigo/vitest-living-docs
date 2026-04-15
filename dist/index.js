@@ -76,7 +76,7 @@ function runScenarios(steps, scenarios) {
       const failures = [];
       for (const [desc, assertion] of scenario.assertions) {
         try {
-          await assertion(frozenFixture, frozenResults);
+          await assertion(frozenResults, frozenFixture);
         } catch (e) {
           failures.push(new Error(`"${desc}" failed: ${e.message}`));
         }

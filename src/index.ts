@@ -23,49 +23,73 @@ export function feature(
 
 // --- types ---
 
-type AnyFn = (fixture: any) => any
-type SetupArg = [description: string, setup: AnyFn | AnyFn[]]
-type ActionTuple<F> = [description: string, action: (fixture: F, results: unknown[]) => unknown]
-type AssertionTuple<F> = [description: string, assertion: (fixture: F, results: unknown[]) => void | Promise<void>]
+type SetupFn<F> = (fixture: F) => F | Promise<F>
+type SetupArg<F> = [description: string, setup: SetupFn<F> | SetupFn<F>[]]
+type ActionTuple<F, R> = [description: string, action: (fixture: F, results: unknown[]) => R]
+type AssertionTuple<F, R extends unknown[]> = [description: string, assertion: (results: R, fixture: F) => void | Promise<void>]
 
 // --- builders ---
 
-class WhenBuilder<F> {
-  constructor(private readonly actions: ActionTuple<F>[]) {}
+class WhenBuilder<F, R extends unknown[]> {
+  constructor(private readonly actions: ActionTuple<F, unknown>[]) {}
 
-  then(...assertions: AssertionTuple<F>[]): ScenarioBuilder<F> {
-    return new ScenarioBuilder(this.actions, assertions)
+  then(...assertions: AssertionTuple<F, R>[]): ScenarioBuilder<F> {
+    return new ScenarioBuilder(this.actions, assertions as AssertionTuple<F, unknown[]>[])
   }
 }
 
 class ScenarioBuilder<F> {
   constructor(
-    readonly actions: ActionTuple<F>[],
-    readonly assertions: AssertionTuple<F>[]
+    readonly actions: ActionTuple<F, unknown>[],
+    readonly assertions: AssertionTuple<F, unknown[]>[]
   ) {}
 }
 
-export function when<F>(...actions: ActionTuple<F>[]): WhenBuilder<F> {
+export function when<F, R1>(
+  a1: ActionTuple<F, R1>
+): WhenBuilder<F, [Awaited<R1>]>
+export function when<F, R1, R2>(
+  a1: ActionTuple<F, R1>,
+  a2: ActionTuple<F, R2>
+): WhenBuilder<F, [Awaited<R1>, Awaited<R2>]>
+export function when<F, R1, R2, R3>(
+  a1: ActionTuple<F, R1>,
+  a2: ActionTuple<F, R2>,
+  a3: ActionTuple<F, R3>
+): WhenBuilder<F, [Awaited<R1>, Awaited<R2>, Awaited<R3>]>
+export function when<F, R1, R2, R3, R4>(
+  a1: ActionTuple<F, R1>,
+  a2: ActionTuple<F, R2>,
+  a3: ActionTuple<F, R3>,
+  a4: ActionTuple<F, R4>
+): WhenBuilder<F, [Awaited<R1>, Awaited<R2>, Awaited<R3>, Awaited<R4>]>
+export function when<F>(...actions: ActionTuple<F, unknown>[]): WhenBuilder<F, unknown[]>
+export function when<F>(...actions: ActionTuple<F, unknown>[]): WhenBuilder<F, unknown[]> {
   return new WhenBuilder(actions)
 }
 
 // --- given ---
 
+// No setup steps (scenarios only)
+export function given<F>(
+  ...scenarios: ScenarioBuilder<F>[]
+): void
+
 // Single labeled setup step
 export function given<F>(
-  setup: SetupArg,
+  setup: SetupArg<F>,
   ...scenarios: ScenarioBuilder<F>[]
 ): void
 
 // Multiple labeled setup steps (outer array distinguishes from single setup)
 export function given<F>(
-  setups: SetupArg[],
+  setups: SetupArg<F>[],
   ...scenarios: ScenarioBuilder<F>[]
 ): void
 
 export function given(first: any, ...rest: any[]): void {
-  let steps: SetupArg[]
-  let scenarios: ScenarioBuilder<any>[]
+  let steps: SetupArg<unknown>[]
+  let scenarios: ScenarioBuilder<unknown>[]
 
   if (Array.isArray(first[0])) {
     // New form: outer array wraps setup tuples — [[desc, fn], [desc, fn]], ...scenarios
@@ -74,14 +98,14 @@ export function given(first: any, ...rest: any[]): void {
   } else {
     // Old form: setup tuples and scenarios mixed as flat args — [desc, fn], [desc, fn], ...scenarios
     const allArgs = [first, ...rest]
-    steps = allArgs.filter((a): a is SetupArg => Array.isArray(a) && !(a instanceof ScenarioBuilder))
-    scenarios = allArgs.filter((a): a is ScenarioBuilder<any> => a instanceof ScenarioBuilder)
+    steps = allArgs.filter((a): a is SetupArg<unknown> => Array.isArray(a) && !(a instanceof ScenarioBuilder))
+    scenarios = allArgs.filter((a): a is ScenarioBuilder<unknown> => a instanceof ScenarioBuilder)
   }
 
   runScenarios(steps, scenarios)
 }
 
-function runScenarios(steps: SetupArg[], scenarios: ScenarioBuilder<any>[]): void {
+function runScenarios<F>(steps: SetupArg<F>[], scenarios: ScenarioBuilder<F>[]): void {
   for (const scenario of scenarios) {
     const givenDescs = steps.map(([d]) => d)
     const whenDescs = scenario.actions.map(([d]) => d)
@@ -95,7 +119,7 @@ function runScenarios(steps: SetupArg[], scenarios: ScenarioBuilder<any>[]): voi
         then: thenDescs,
       }
 
-      let fixture: any = {}
+      let fixture = {} as F
       for (const [, setup] of steps) {
         if (Array.isArray(setup)) {
           for (const fn of setup) fixture = await fn(fixture)
@@ -114,7 +138,7 @@ function runScenarios(steps: SetupArg[], scenarios: ScenarioBuilder<any>[]): voi
       const failures: Error[] = []
       for (const [desc, assertion] of scenario.assertions) {
         try {
-          await assertion(frozenFixture, frozenResults)
+          await assertion(frozenResults as unknown[], frozenFixture)
         } catch (e) {
           failures.push(new Error(`"${desc}" failed: ${(e as Error).message}`))
         }
